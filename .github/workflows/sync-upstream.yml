@@ -45,8 +45,8 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.name "vacp2p-boringssl-updater"
-          git config user.email "vacp2p-boringssl-updater@users.noreply.github.com"
+          git config user.name "iftech-boringssl-updater"
+          git config user.email "iftech-boringssl-updater@users.noreply.github.com"
           git remote set-url origin "https://x-access-token:${BORINGSSL_UPDATE_BOT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
       - name: Sync upstream
