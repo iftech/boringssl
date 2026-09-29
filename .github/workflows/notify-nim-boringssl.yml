@@ -44,7 +44,7 @@ jobs:
       - name: Dispatch nim-boringssl update
         if: steps.changed.outputs.should_dispatch == 'true'
         run: |
-          gh api repos/vacp2p/nim-boringssl/dispatches \
+          gh api repos/iftech/nim-boringssl/dispatches \
             -f event_type=boringssl-updated \
             -f client_payload[boringssl_sha]="${GITHUB_SHA}" \
             -f client_payload[boringssl_repository]="${GITHUB_REPOSITORY}" \
