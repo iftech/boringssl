@@ -886,7 +886,7 @@ OPENSSL_EXPORT int SSL_CREDENTIAL_set1_ocsp_response(SSL_CREDENTIAL *cred,
 
 // SSL_CREDENTIAL_set1_certificate_properties parses
 // `certificate_property_list` as a CertificatePropertyList (see Section 7 of
-// draft-ietf-tls-trust-anchor-ids-04) and applies recognized properties to
+// draft-ietf-tls-trust-anchor-ids-05) and applies recognized properties to
 // `cred`. It returns one on success and zero on error. It is an error if
 // `certificate_property_list` does not parse correctly, or if any recognized
 // properties from `certificate_property_list` cannot be applied to `cred`.
@@ -898,8 +898,7 @@ OPENSSL_EXPORT int SSL_CREDENTIAL_set1_ocsp_response(SSL_CREDENTIAL *cred,
 //
 // BoringSSL currently supports the following properties:
 // * trust_anchor_id (see `SSL_CREDENTIAL_set1_trust_anchor_id`)
-// * trust_anchor_group_inclusions (see
-//   `SSL_CREDENTIAL_add1_trust_anchor_group_inclusion`)
+// * trust_anchor_groups (see `SSL_CREDENTIAL_add1_trust_anchor_group`)
 //
 // Note this function does not automatically enable issuer matching. Callers
 // must separately call `SSL_CREDENTIAL_set_must_match_issuer` if desired.
@@ -1252,6 +1251,7 @@ OPENSSL_EXPORT int SSL_set_ocsp_response(SSL *ssl, const uint8_t *response,
 // SSL_get_signature_algorithm_name returns a human-readable name for `sigalg`,
 // or NULL if unknown. If `include_curve` is one, the curve for ECDSA algorithms
 // is included as in TLS 1.3. Otherwise, it is excluded as in TLS 1.2.
+// This string is always an ASCII string.
 OPENSSL_EXPORT const char *SSL_get_signature_algorithm_name(uint16_t sigalg,
                                                             int include_curve);
 
@@ -1267,6 +1267,7 @@ OPENSSL_EXPORT const char *SSL_get_signature_algorithm_name(uint16_t sigalg,
 // placeholder, experimental, or deprecated values that do not apply to every
 // caller. Future versions of BoringSSL may also return strings not in this
 // list, so this does not apply if, say, sending strings across services.
+// The strings are always ASCII-encoded.
 OPENSSL_EXPORT size_t SSL_get_all_signature_algorithm_names(const char **out,
                                                             size_t max_out);
 
@@ -1646,11 +1647,13 @@ OPENSSL_EXPORT uint16_t SSL_CIPHER_get_max_version(const SSL_CIPHER *cipher);
 
 // SSL_CIPHER_standard_name returns the standard IETF name for `cipher`. For
 // example, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256".
+// The standard name is always an ASCII string.
 OPENSSL_EXPORT const char *SSL_CIPHER_standard_name(const SSL_CIPHER *cipher);
 
 // SSL_CIPHER_get_kx_name returns a string that describes the key-exchange
 // method used by `cipher`. For example, "ECDHE_ECDSA". TLS 1.3 AEAD-only
 // ciphers return the string "GENERIC".
+// The key-exchange method name is always an ASCII string.
 OPENSSL_EXPORT const char *SSL_CIPHER_get_kx_name(const SSL_CIPHER *cipher);
 
 // SSL_CIPHER_get_bits returns the strength, in bits, of `cipher`. If
@@ -1671,6 +1674,7 @@ OPENSSL_EXPORT int SSL_CIPHER_get_bits(const SSL_CIPHER *cipher,
 // placeholder, experimental, or deprecated values that do not apply to every
 // caller. Future versions of BoringSSL may also return strings not in this
 // list, so this does not apply if, say, sending strings across services.
+// The strings are always ASCII-encoded.
 OPENSSL_EXPORT size_t SSL_get_all_cipher_names(const char **out,
                                                size_t max_out);
 
@@ -1687,6 +1691,7 @@ OPENSSL_EXPORT size_t SSL_get_all_cipher_names(const char **out,
 // placeholder, experimental, or deprecated values that do not apply to every
 // caller. Future versions of BoringSSL may also return strings not in this
 // list, so this does not apply if, say, sending strings across services.
+// The strings are always ASCII-encoded.
 OPENSSL_EXPORT size_t SSL_get_all_standard_cipher_names(const char **out,
                                                         size_t max_out);
 
@@ -2063,6 +2068,7 @@ OPENSSL_EXPORT int PEM_write_SSL_SESSION(FILE *fp, const SSL_SESSION *in);
 
 // SSL_SESSION_get_version returns a string describing the TLS or DTLS version
 // `session` was established at. For example, "TLSv1.2" or "DTLSv1".
+// The version string is always an ASCII string.
 OPENSSL_EXPORT const char *SSL_SESSION_get_version(const SSL_SESSION *session);
 
 // SSL_SESSION_get_protocol_version returns the TLS or DTLS version `session`
@@ -2776,6 +2782,7 @@ OPENSSL_EXPORT uint16_t SSL_get_group_id(const SSL *ssl);
 
 // SSL_get_group_name returns a human-readable name for the group specified by
 // the given TLS group ID, or NULL if the group is unknown.
+// The group name is always an ASCII string.
 OPENSSL_EXPORT const char *SSL_get_group_name(uint16_t group_id);
 
 // SSL_get_all_group_names outputs a list of possible strings
@@ -2790,6 +2797,7 @@ OPENSSL_EXPORT const char *SSL_get_group_name(uint16_t group_id);
 // placeholder, experimental, or deprecated values that do not apply to every
 // caller. Future versions of BoringSSL may also return strings not in this
 // list, so this does not apply if, say, sending strings across services.
+// The strings are always ASCII-encoded.
 OPENSSL_EXPORT size_t SSL_get_all_group_names(const char **out, size_t max_out);
 
 // The following APIs also configure Diffie-Hellman groups, but use `NID_*`
@@ -3346,8 +3354,8 @@ OPENSSL_EXPORT int SSL_add_bio_cert_subjects_to_stack(STACK_OF(X509_NAME) *out,
 
 // SSL_CREDENTIAL_set1_trust_anchor_id sets `cred`'s trust anchor ID to `id`, or
 // clears it if `id_len` is zero. It returns one on success and zero on
-// error. If not clearing, `id` must be in binary format (Section 3 of
-// draft-ietf-tls-trust-anchor-ids-04) of length `id_len`, and describe the
+// error. If not clearing, `id` must be in binary format (Section 4 of
+// draft-ietf-tls-trust-anchor-ids-05) of length `id_len`, and describe the
 // issuer of the final certificate in `cred`'s certificate chain.
 //
 // Additionally, `cred` must enable issuer matching (see
@@ -3359,28 +3367,29 @@ OPENSSL_EXPORT int SSL_CREDENTIAL_set1_trust_anchor_id(SSL_CREDENTIAL *cred,
                                                        const uint8_t *id,
                                                        size_t id_len);
 
-// SSL_CREDENTIAL_add1_trust_anchor_group_inclusion specifies that `cred`
-// matches all trust anchor IDs equal to `base` followed some component between
-// `min` and `max`, inclusive. It returns one on success and zero on error. This
-// function may be called multiple times to register multiple group inclusions.
+// SSL_CREDENTIAL_add1_trust_anchor_group specifies that `cred` matches all
+// trust anchor IDs that match `pattern`. It returns one on success and zero on
+// error. This function may be called multiple times to register multiple group
+// patterns.
+//
+// `pattern` is interpreted as the byte representation of a trust anchor ID
+// pattern, as described in draft-ietf-tls-trust-anchor-ids.
 //
 // For extensibility, callers are recommended to configure this information with
 // a CertificatePropertyList. See `SSL_CREDENTIAL_set1_certificate_properties`.
-OPENSSL_EXPORT int SSL_CREDENTIAL_add1_trust_anchor_group_inclusion(
-    SSL_CREDENTIAL *cred, const uint8_t *base, size_t base_len, uint64_t min,
-    uint64_t max);
+OPENSSL_EXPORT int SSL_CREDENTIAL_add1_trust_anchor_group(
+    SSL_CREDENTIAL *cred, const uint8_t *pattern, size_t pattern_len);
 
 // SSL_CTX_set1_requested_trust_anchors configures `ctx` to request a
-// certificate issued by one of the trust anchors in `ids`. It returns one on
-// success and zero on error. `ids` must be a list of trust anchor IDs in
-// wire-format (a series of non-empty, 8-bit length-prefixed strings).
+// certificate issued by one of the trust anchors or trust anchor groups in
+// `ids`. It returns one on success and zero on error. `ids` must be a list of
+// trust anchor IDs in wire-format (a series of non-empty, 8-bit length-prefixed
+// strings).
 //
-// The list may describe application's full list of supported trust anchors, or
-// a, possibly empty, subset. Applications can select this subset using
-// out-of-band information, such as the DNS hint in Section 6 of
-// draft-ietf-tls-trust-anchor-ids-04. Client applications sending a subset
-// should use `SSL_get0_peer_available_trust_anchors` to implement the retry
-// flow from Section 4.3 of draft-ietf-tls-trust-anchor-ids-04.
+// See Section 5.2 of draft-ietf-tls-trust-anchor-ids-05 for guidance on
+// determining this list. If applicable, client applications can use
+// `SSL_get0_peer_available_trust_anchors` to implement the recovery flow from
+// Section 5.6 of draft-ietf-tls-trust-anchor-ids-05.
 //
 // If empty (`ids_len` is zero), the trust_anchors extension will still be sent
 // in ClientHello. This may be used by a client application to signal support
@@ -3419,7 +3428,7 @@ OPENSSL_EXPORT int SSL_peer_matched_trust_anchor(const SSL *ssl);
 // This value is only available during the handshake and is expected to be
 // called in the event of certificate verification failure. Client applications
 // can use it to retry the connection, requesting different trust anchors. See
-// Section 4.3 of draft-ietf-tls-trust-anchor-ids-04 for details.
+// Section 5.6 of draft-ietf-tls-trust-anchor-ids-05 for details.
 // `CBS_get_u8_length_prefixed` may be used to iterate over the format.
 //
 // If needed in other contexts, callers may save the value during certificate
@@ -4681,6 +4690,7 @@ OPENSSL_EXPORT enum ssl_early_data_reason_t SSL_get_early_data_reason(
 
 // SSL_early_data_reason_string returns a string representation for `reason`, or
 // NULL if `reason` is unknown. This function may be used for logging.
+// This string is always ASCII-encoded.
 OPENSSL_EXPORT const char *SSL_early_data_reason_string(
     enum ssl_early_data_reason_t reason);
 
@@ -4925,10 +4935,12 @@ OPENSSL_EXPORT int SSL_ech_accepted(const SSL *ssl);
 
 // SSL_alert_type_string_long returns a string description of `value` as an
 // alert type (warning or fatal).
+// This string is always ASCII-encoded.
 OPENSSL_EXPORT const char *SSL_alert_type_string_long(int value);
 
 // SSL_alert_desc_string_long returns a string description of `value` as an
 // alert description or "unknown" if unknown.
+// This string is always ASCII-encoded.
 OPENSSL_EXPORT const char *SSL_alert_desc_string_long(int value);
 
 // SSL_send_fatal_alert sends a fatal alert over `ssl` of the specified type,
@@ -5589,6 +5601,7 @@ OPENSSL_EXPORT void (*SSL_get_info_callback(const SSL *ssl))(const SSL *ssl,
 
 // SSL_state_string_long returns the current state of the handshake state
 // machine as a string. This may be useful for debugging and logging.
+// This string is always ASCII-encoded.
 OPENSSL_EXPORT const char *SSL_state_string_long(const SSL *ssl);
 
 #define SSL_SENT_SHUTDOWN 1
