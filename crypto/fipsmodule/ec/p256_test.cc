@@ -24,6 +24,8 @@ namespace {
     defined(SUPPORTS_ABI_TEST)
 extern "C" {
 #include "../../../third_party/fiat/p256_field.c.inc"
+void fiat_p256_adx_mul(uint64_t *, const uint64_t *, const uint64_t *);
+void fiat_p256_adx_sqr(uint64_t *, const uint64_t *);
 }
 
 TEST(P256Test, AdxMulABI) {
