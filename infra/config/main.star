@@ -316,6 +316,25 @@ luci.cq_tryjob_verifier(
     ],
 )
 
+# Builds Chromium with the CL applied to third_party/boringssl/src (on top of
+# BoringSSL main, not the DEPS pin) to catch roll breakage before the
+# autoroller. Listed builders are ones that often break in BoringSSL Chromium
+# rolls. These are expected to take much longer to run than BoringSSL's own
+# builders, so use judiciously.
+[luci.cq_tryjob_verifier(
+    cq_group = "main-cq",
+    builder = "chromium:try/" + b,
+    owner_whitelist = ["project-boringssl-tryjob-access"],
+    includable_only = True,
+) for b in [
+    "android_compile_dbg",
+    "android-arm64-rel",
+    "linux-libfuzzer-asan-rel",
+    "linux-rel",
+    "mac_chromium_compile_dbg_ng",
+    "win_chromium_compile_dbg_ng",
+]]
+
 def compile_only(properties):
     compile_properties = dict(properties)
     compile_properties["run_unit_tests"] = False
@@ -1582,6 +1601,25 @@ both_builders(
         "prefixed_symbols": True,
         "check_prefixed_symbols": True,
         "upload_to_cas": FINISHED_OUTPUT_FILES_WIN_STATIC,
+    }),
+)
+
+# clang-cl in shared library mode matches Chromium's Windows component build.
+# clang-cl does not treat cross-DLL function addresses as constant expressions,
+# so this catches constexpr initializers in tests that the MSVC shared builders
+# have missed.
+both_builders(
+    "win64_clang_shared_compile",
+    WIN_HOST,
+    category = "win|x86-64|clang",
+    short_name = "sh",
+    properties = compile_only({
+        "clang": True,
+        "msvc_target": "x64",
+        "cmake_args": {
+            "BUILD_SHARED_LIBS": "1",
+        },
+        "upload_to_cas": FINISHED_OUTPUT_FILES_WIN_SHARED,
     }),
 )
 

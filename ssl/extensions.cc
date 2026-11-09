@@ -110,6 +110,11 @@ static bool is_post_quantum_group(uint16_t id) {
   return id == SSL_GROUP_X25519_MLKEM768 || id == SSL_GROUP_MLKEM1024;
 }
 
+static bool is_post_quantum_sigalg(uint16_t sigalg) {
+  return sigalg == SSL_SIGN_ML_DSA_44 || sigalg == SSL_SIGN_ML_DSA_65 ||
+         sigalg == SSL_SIGN_ML_DSA_87;
+}
+
 bool ssl_parse_client_hello_with_trailing_data(const SSLImpl *ssl, CBS *cbs,
                                                SSL_CLIENT_HELLO *out) {
   OPENSSL_memset(out, 0, sizeof(*out));
@@ -215,21 +220,13 @@ bool tls1_get_shared_group(SSL_HANDSHAKE *hs, uint16_t *out_group_id) {
   // `peer_supported_group_list`.
 
   Span<const uint16_t> groups = hs->config->supported_group_list;
-  Span<const uint16_t> pref, supp;
-  Span<const uint32_t> pref_flags;
-  if (ssl->options & SSL_OP_CIPHER_SERVER_PREFERENCE) {
-    pref = groups;
-    pref_flags = hs->config->supported_group_list_flags;
-    supp = hs->peer_supported_group_list;
-  } else {
-    pref = hs->peer_supported_group_list;
-    supp = groups;
-  }
+  Span<const uint32_t> groups_flags = hs->config->supported_group_list_flags;
+  Span<const uint16_t> supp = hs->peer_supported_group_list;
 
   // Index within `supp` of the best matching group so far.
   std::optional<size_t> best_match;
-  for (size_t i = 0u; i < pref.size(); ++i) {
-    uint16_t candidate_group = pref[i];
+  for (size_t i = 0u; i < groups.size(); ++i) {
+    uint16_t candidate_group = groups[i];
     auto match_it = std::find(supp.begin(), supp.end(), candidate_group);
     // Post-quantum key agreements don't fit in the u8-length-prefixed
     // ECPoint field in TLS 1.2 and below.
@@ -246,8 +243,8 @@ bool tls1_get_shared_group(SSL_HANDSHAKE *hs, uint16_t *out_group_id) {
 
     // If we found a match, stop at the current equipreference group.
     bool equal_with_next =
-        !pref_flags.empty() &&
-        (pref_flags[i] & SSL_GROUP_FLAG_EQUAL_PREFERENCE_WITH_NEXT);
+        !groups_flags.empty() &&
+        (groups_flags[i] & SSL_GROUP_FLAG_EQUAL_PREFERENCE_WITH_NEXT);
     if (!equal_with_next && best_match.has_value()) {
       break;
     }
@@ -339,7 +336,12 @@ static Span<const uint16_t> tls12_get_verify_sigalgs(const SSL_HANDSHAKE *hs) {
 }
 
 bool tls12_add_verify_sigalgs(const SSL_HANDSHAKE *hs, CBB *out) {
+  uint16_t max_version =
+      hs->ssl->server ? ssl_protocol_version(hs->ssl) : hs->max_version;
   for (uint16_t sigalg : tls12_get_verify_sigalgs(hs)) {
+    if (is_post_quantum_sigalg(sigalg) && max_version < TLS1_3_VERSION) {
+      continue;
+    }
     if (!CBB_add_u16(out, sigalg)) {
       return false;
     }
