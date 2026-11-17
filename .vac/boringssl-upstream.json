@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source": {
     "url": "https://boringssl.googlesource.com/boringssl",
     "ref": "refs/heads/main",
@@ -8,16 +8,27 @@
   "previous_upstream_sha": "99b9d64ec02384c4c939f264b40e91d6cb5ca904",
   "current_upstream_sha": "26584e7a10cc0ffa4df14f4eb7f90e5b44b37ffe",
   "last_synced_at": "2026-11-17T13:44:20Z",
-  "local_patch": {
-    "description": "Use portable C code for fiat_p256 mul/sqr on Windows by removing ADX assembly dispatch.",
-    "commit": "d6238994c547f070c1e053aada216ee3ce67e8e0",
-    "path": ".vac/patches/fiat-p256-windows.patch",
-    "sha256": "7c101914e32a4586a74d77a0b789ec151b55b37d82818a4c22e26792a59118d1"
-  },
+  "local_patches": [
+    {
+      "name": "fiat-p256-windows",
+      "description": "Use portable C code for fiat_p256 mul/sqr on Windows by removing ADX assembly dispatch.",
+      "commit": "d6238994c547f070c1e053aada216ee3ce67e8e0",
+      "path": ".vac/patches/fiat-p256-windows.patch",
+      "sha256": "7c101914e32a4586a74d77a0b789ec151b55b37d82818a4c22e26792a59118d1"
+    },
+    {
+      "name": "ssl-buffer-zeroing",
+      "description": "With BORINGSSL_ZERO_RECORD_BUFFERS defined, allocate TLS record buffers with OPENSSL_malloc so that OPENSSL_free zeroes the decrypted records they hold; upstream's malloc/free otherwise.",
+      "commit": "7c353295",
+      "path": ".vac/patches/ssl-buffer-zeroing.patch",
+      "sha256": "2783d378f0b30adbf0ff80b9f141e6211643ef09c18f1d40a6aa9f457cce0395"
+    }
+  ],
   "last_verification": {
     "github_mirror_sha": "26584e7a10cc0ffa4df14f4eb7f90e5b44b37ffe",
     "patch_replayed": true,
-    "fiat_p256_adx_dispatch_absent": true
+    "fiat_p256_adx_dispatch_absent": true,
+    "ssl_buffer_zeroing_present": true
   },
   "sync_history": [
     {

@@ -112,8 +112,8 @@ jobs:
 
           Check for:
           - merge conflicts with upstream BoringSSL
-          - fiat_p256 patch replay failure
-          - ADX dispatch invariant failure
+          - local patch replay failure (.vac/patches)
+          - local patch invariant failure
           - provenance fast-forward failure
           - non-ancestor GitHub mirror mismatch
 

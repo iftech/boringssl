@@ -17,9 +17,29 @@ MIRROR_URL = "https://github.com/google/boringssl.git"
 UPSTREAM_REF = "refs/heads/main"
 
 PROVENANCE_PATH = Path(".vac/boringssl-upstream.json")
-PATCH_PATH = Path(".vac/patches/fiat-p256-windows.patch")
 PR_BODY_PATH = Path(".vac/boringssl-sync-pr-body.md")
-PATCHED_PATHS = [Path("third_party/fiat/p256_64.h")]
+# The fork's local patches, replayed in this order on every sync. Each patch
+# touches only its own paths, and has an invariant in INVARIANTS (by name) and a
+# flag it sets in the provenance's `last_verification`. The list may be empty.
+LOCAL_PATCHES = [
+    {
+        "name": "fiat-p256-windows",
+        "description": "Use portable C code for fiat_p256 mul/sqr on Windows by removing ADX assembly dispatch.",
+        "path": Path(".vac/patches/fiat-p256-windows.patch"),
+        "paths": [Path("third_party/fiat/p256_64.h")],
+        "verified_as": "fiat_p256_adx_dispatch_absent",
+        "checklist": "Confirm the local Windows `fiat_p256` patch is still required and correctly applied.",
+    },
+    {
+        "name": "ssl-buffer-zeroing",
+        "description": "With BORINGSSL_ZERO_RECORD_BUFFERS defined, allocate TLS record buffers with OPENSSL_malloc so that OPENSSL_free zeroes the decrypted records they hold; upstream's malloc/free otherwise.",
+        "path": Path(".vac/patches/ssl-buffer-zeroing.patch"),
+        "paths": [Path("ssl/ssl_buffer.cc")],
+        "verified_as": "ssl_buffer_zeroing_present",
+        "checklist": "Confirm `ssl/ssl_buffer.cc` still allocates and frees record buffers through its helpers, with `OPENSSL_malloc`/`OPENSSL_free` under `BORINGSSL_ZERO_RECORD_BUFFERS` and upstream's `malloc`/`free` otherwise, and that no new plain `malloc`/`free` of record data appeared in `ssl/`.",
+    },
+]
+PATCHED_PATHS = [path for patch in LOCAL_PATCHES for path in patch["paths"]]
 PROTECTED_WORKFLOW_DIR = Path(".github/workflows")
 SENSITIVE_PATHS = ["crypto/", "ssl/", "include/openssl/", "third_party/fiat/"]
 
@@ -115,14 +135,15 @@ def verify_patch_against_upstream(upstream_sha):
     worktree = tmp / "upstream"
     try:
         git(["worktree", "add", "--detach", str(worktree), upstream_sha])
-        run(["git", "apply", str((repo / PATCH_PATH).resolve())], cwd=worktree)
+        for patch in LOCAL_PATCHES:
+            run(["git", "apply", str((repo / patch["path"]).resolve())], cwd=worktree)
 
         for rel_path in PATCHED_PATHS:
             expected = (worktree / rel_path).read_bytes()
             actual = (repo / rel_path).read_bytes()
             if expected != actual:
                 fail(
-                    f"{rel_path} does not match {PATCH_PATH} applied to "
+                    f"{rel_path} does not match the local patches applied to "
                     f"upstream {upstream_sha}"
                 )
     finally:
@@ -155,27 +176,27 @@ def restore_path_from_ref_or_remove(ref, path):
         git(["rm", "-f", "--ignore-unmatch", "--", str(path)])
 
 
-def replay_local_patch():
-    patch_proc = git(["apply", "-3", str(PATCH_PATH)], check=False)
+def replay_local_patch(patch):
+    patch_proc = git(["apply", "-3", str(patch["path"])], check=False)
     if patch_proc.returncode == 0:
-        git(["add", *[str(path) for path in PATCHED_PATHS]])
+        git(["add", *[str(path) for path in patch["paths"]]])
         return
 
     print_proc_output(patch_proc)
     conflicts = unmerged_paths()
     if not conflicts:
-        fail("local patch replay failed without producing unmerged paths")
+        fail(f"local patch {patch['name']} replay failed without producing unmerged paths")
 
-    unexpected = [path for path in conflicts if path not in PATCHED_PATHS]
+    unexpected = [path for path in conflicts if path not in patch["paths"]]
     if unexpected:
         fail(
-            "local patch replay produced conflicts outside known patched paths: "
+            f"local patch {patch['name']} replay produced conflicts outside its paths: "
             + ", ".join(str(path) for path in unexpected)
         )
 
     for path in conflicts:
         git(["checkout", "--theirs", str(path)])
-    git(["add", *[str(path) for path in PATCHED_PATHS]])
+    git(["add", *[str(path) for path in patch["paths"]]])
 
 
 def restore_protected_workflow_changes(target_ref):
@@ -216,9 +237,11 @@ def resolve_known_conflicts(upstream_sha, target_ref):
             "Resolving upstream merge conflicts in known local patch paths: "
             + ", ".join(str(path) for path in patch_conflicts)
         )
-        for path in PATCHED_PATHS:
-            git(["checkout", upstream_sha, "--", str(path)])
-        replay_local_patch()
+        for patch in LOCAL_PATCHES:
+            if any(path in patch_conflicts for path in patch["paths"]):
+                for path in patch["paths"]:
+                    git(["checkout", upstream_sha, "--", str(path)])
+                replay_local_patch(patch)
 
     remaining = unmerged_paths()
     if remaining:
@@ -228,15 +251,18 @@ def resolve_known_conflicts(upstream_sha, target_ref):
         )
 
 
-def refresh_patch_file(upstream_sha):
-    patch_text = git(["diff", upstream_sha, "--", *[str(path) for path in PATCHED_PATHS]]).stdout
-    if not patch_text.strip():
-        fail("local patch is empty after replaying against upstream")
-    PATCH_PATH.write_text(patch_text, encoding="utf-8")
-    git(["add", str(PATCH_PATH)])
+def refresh_patch_files(upstream_sha):
+    for patch in LOCAL_PATCHES:
+        patch_text = git(
+            ["-c", "core.abbrev=9", "diff", upstream_sha, "--", *[str(path) for path in patch["paths"]]]
+        ).stdout
+        if not patch_text.strip():
+            fail(f"local patch {patch['name']} is empty after replaying against upstream")
+        patch["path"].write_text(patch_text, encoding="utf-8")
+        git(["add", str(patch["path"])])
 
 
-def verify_invariants():
+def verify_fiat_p256_windows():
     p256 = Path("third_party/fiat/p256_64.h").read_text(encoding="utf-8")
     forbidden = [
         "fiat_p256_adx_mul(",
@@ -250,6 +276,36 @@ def verify_invariants():
             "third_party/fiat/p256_64.h appears to contain ADX dispatch again: "
             + ", ".join(present)
         )
+
+
+def verify_ssl_buffer_zeroing():
+    # With BORINGSSL_ZERO_RECORD_BUFFERS the record buffer must be allocated and
+    # released through the zeroing allocator; every call site goes through the
+    # helpers, never plain malloc/free.
+    ssl_buffer = Path("ssl/ssl_buffer.cc").read_text(encoding="utf-8")
+    guard = "#if defined(BORINGSSL_ZERO_RECORD_BUFFERS)"
+    if guard not in ssl_buffer or "#else" not in ssl_buffer.split(guard, 1)[1]:
+        fail("ssl/ssl_buffer.cc has lost the BORINGSSL_ZERO_RECORD_BUFFERS guard")
+    zeroing = ssl_buffer.split(guard, 1)[1].split("#else", 1)[0]
+    if "OPENSSL_malloc(" not in zeroing or "OPENSSL_free(" not in zeroing:
+        fail("ssl/ssl_buffer.cc's BORINGSSL_ZERO_RECORD_BUFFERS path no longer uses OPENSSL_malloc and OPENSSL_free")
+    if "ssl_buffer_alloc(new_cap" not in ssl_buffer or ssl_buffer.count("ssl_buffer_free(buf_)") != 2:
+        fail("ssl/ssl_buffer.cc no longer allocates and frees record buffers through its helpers")
+    raw = [line.strip() for line in ssl_buffer.splitlines()
+           if line.strip().startswith(("free(", "new_buf = (uint8_t *)malloc("))]
+    if raw:
+        fail("ssl/ssl_buffer.cc calls plain malloc or free outside its helpers: " + ", ".join(raw))
+
+
+INVARIANTS = {
+    "fiat-p256-windows": verify_fiat_p256_windows,
+    "ssl-buffer-zeroing": verify_ssl_buffer_zeroing,
+}
+
+
+def verify_invariants():
+    for patch in LOCAL_PATCHES:
+        INVARIANTS[patch["name"]]()
 
 
 def limited_lines(text, limit=100):
@@ -354,7 +410,7 @@ Syncs `vacp2p/boringssl` with BoringSSL upstream `main`.
 - Mirror cross-check: {mirror_status}
 - Fast-forward ancestry check: {fast_forward_status}
 - Upstream commit count: {commit_count}
-- Local patch: `{PATCH_PATH}` replayed successfully against the new upstream SHA
+- Local patches replayed successfully against the new upstream SHA: {", ".join(f"`{patch['path']}`" for patch in LOCAL_PATCHES) or "none"}
 
 ### Commits Touching Monitored Crypto Paths
 {sensitive_text}
@@ -369,8 +425,7 @@ Syncs `vacp2p/boringssl` with BoringSSL upstream `main`.
 - [ ] Review commits touching `crypto/`, `ssl/`, `include/openssl/`, and `third_party/fiat/`.
 - [ ] Check BoringSSL security advisories and the upstream README security notes before merge.
 - [ ] Confirm skipped upstream workflow changes are not needed for this fork.
-- [ ] Confirm the local Windows `fiat_p256` patch is still required and correctly applied.
-- [ ] Wait for CI before merging.
+{"".join(f"- [ ] {patch['checklist']}\n" for patch in LOCAL_PATCHES)}- [ ] Wait for CI before merging.
 """
 
 
@@ -380,9 +435,29 @@ def load_provenance():
     return json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
 
 
+def recorded_patches(provenance):
+    """The local patch records, from schema 2's `local_patches` or schema 1's `local_patch`."""
+    if "local_patches" in provenance:
+        return {patch["path"]: patch for patch in provenance["local_patches"]}
+    single = provenance.get("local_patch")
+    return {single["path"]: single} if single else {}
+
+
 def write_provenance(provenance, previous_sha, upstream_sha, mirror_sha):
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    patch_hash = sha256_file(PATCH_PATH)
+    recorded = recorded_patches(provenance)
+    patch_records = []
+    for patch in LOCAL_PATCHES:
+        previous = recorded.get(str(patch["path"]), {})
+        patch_records.append(
+            {
+                "name": patch["name"],
+                "description": previous.get("description", patch["description"]),
+                "commit": previous.get("commit"),
+                "path": str(patch["path"]),
+                "sha256": sha256_file(patch["path"]),
+            }
+        )
     history = provenance.get("sync_history", [])
     history.append(
         {
@@ -390,12 +465,12 @@ def write_provenance(provenance, previous_sha, upstream_sha, mirror_sha):
             "previous_upstream_sha": previous_sha,
             "new_upstream_sha": upstream_sha,
             "github_mirror_sha": mirror_sha,
-            "local_patch_sha256": patch_hash,
+            "local_patch_sha256": {record["name"]: record["sha256"] for record in patch_records},
         }
     )
 
     updated = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": {
             "url": UPSTREAM_URL,
             "ref": UPSTREAM_REF,
@@ -404,16 +479,11 @@ def write_provenance(provenance, previous_sha, upstream_sha, mirror_sha):
         "previous_upstream_sha": previous_sha,
         "current_upstream_sha": upstream_sha,
         "last_synced_at": now,
-        "local_patch": {
-            "description": provenance["local_patch"]["description"],
-            "commit": provenance["local_patch"]["commit"],
-            "path": str(PATCH_PATH),
-            "sha256": patch_hash,
-        },
+        "local_patches": patch_records,
         "last_verification": {
             "github_mirror_sha": mirror_sha,
-            "patch_replayed": True,
-            "fiat_p256_adx_dispatch_absent": True,
+            "patch_replayed": bool(LOCAL_PATCHES),
+            **{patch["verified_as"]: True for patch in LOCAL_PATCHES},
         },
         "sync_history": history,
     }
@@ -462,7 +532,7 @@ def main():
         print_proc_output(merge_proc)
         resolve_known_conflicts(upstream_sha, f"origin/{target_branch}")
     skipped_workflow_paths = restore_protected_workflow_changes(f"origin/{target_branch}")
-    refresh_patch_file(upstream_sha)
+    refresh_patch_files(upstream_sha)
     verify_patch_against_upstream(upstream_sha)
     verify_invariants()
     write_provenance(provenance, previous_sha, upstream_sha, mirror_sha)

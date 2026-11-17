@@ -1,0 +1,55 @@
+diff --git a/ssl/ssl_buffer.cc b/ssl/ssl_buffer.cc
+index 9cb1298e2..698a552c7 100644
+--- a/ssl/ssl_buffer.cc
++++ b/ssl/ssl_buffer.cc
+@@ -36,9 +36,24 @@ static_assert(0xffff <= INT_MAX, "uint16_t does not fit in int");
+ static_assert((SSL3_ALIGN_PAYLOAD & (SSL3_ALIGN_PAYLOAD - 1)) == 0,
+               "SSL3_ALIGN_PAYLOAD must be a power of 2");
+ 
++// The record buffers are allocated frequently, so by default they use plain
++// `malloc` and `free` and avoid zeroing on free, as upstream does. Records are
++// opened in place, though, so the read buffer holds decrypted application data
++// until it is released. With `BORINGSSL_ZERO_RECORD_BUFFERS` defined (a vacp2p
++// option), they use `OPENSSL_malloc` and `OPENSSL_free`, which zeroes them.
++#if defined(BORINGSSL_ZERO_RECORD_BUFFERS)
++static uint8_t *ssl_buffer_alloc(size_t len) {
++  return (uint8_t *)OPENSSL_malloc(len);
++}
++static void ssl_buffer_free(uint8_t *buf) { OPENSSL_free(buf); }
++#else
++static uint8_t *ssl_buffer_alloc(size_t len) { return (uint8_t *)malloc(len); }
++static void ssl_buffer_free(uint8_t *buf) { free(buf); }
++#endif
++
+ void SSLBuffer::Clear() {
+   if (buf_ != inline_buf_) {
+-    free(buf_);  // Allocated with malloc().
++    ssl_buffer_free(buf_);  // Allocated with ssl_buffer_alloc().
+   }
+   buf_ = nullptr;
+   offset_ = 0;
+@@ -64,12 +79,9 @@ bool SSLBuffer::EnsureCap(size_t header_len, size_t new_cap) {
+     new_buf = inline_buf_;
+     new_offset = 0;
+   } else {
+-    // Add up to `SSL3_ALIGN_PAYLOAD` - 1 bytes of slack for alignment.
+-    //
+-    // Since this buffer gets allocated quite frequently and doesn't contain any
+-    // sensitive data, we allocate with malloc rather than `OPENSSL_malloc` and
+-    // avoid zeroing on free.
+-    new_buf = (uint8_t *)malloc(new_cap + SSL3_ALIGN_PAYLOAD - 1);
++    // Add up to `SSL3_ALIGN_PAYLOAD` - 1 bytes of slack for alignment. See
++    // `ssl_buffer_alloc` for the allocator.
++    new_buf = ssl_buffer_alloc(new_cap + SSL3_ALIGN_PAYLOAD - 1);
+     if (new_buf == nullptr) {
+       OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+       return false;
+@@ -85,7 +97,7 @@ bool SSLBuffer::EnsureCap(size_t header_len, size_t new_cap) {
+   OPENSSL_memmove(new_buf + new_offset, buf_ + offset_, size_);
+ 
+   if (buf_ != inline_buf_) {
+-    free(buf_);  // Allocated with malloc().
++    ssl_buffer_free(buf_);  // Allocated with ssl_buffer_alloc().
+   }
+ 
+   buf_ = new_buf;
