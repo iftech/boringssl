@@ -10,13 +10,6 @@
   "last_synced_at": "2026-11-17T13:44:20Z",
   "local_patches": [
     {
-      "name": "fiat-p256-windows",
-      "description": "Use portable C code for fiat_p256 mul/sqr on Windows by removing ADX assembly dispatch.",
-      "commit": "d6238994c547f070c1e053aada216ee3ce67e8e0",
-      "path": ".vac/patches/fiat-p256-windows.patch",
-      "sha256": "7c101914e32a4586a74d77a0b789ec151b55b37d82818a4c22e26792a59118d1"
-    },
-    {
       "name": "ssl-buffer-zeroing",
       "description": "With BORINGSSL_ZERO_RECORD_BUFFERS defined, allocate TLS record buffers with OPENSSL_malloc so that OPENSSL_free zeroes the decrypted records they hold; upstream's malloc/free otherwise.",
       "commit": "7c353295",
@@ -27,7 +20,6 @@
   "last_verification": {
     "github_mirror_sha": "26584e7a10cc0ffa4df14f4eb7f90e5b44b37ffe",
     "patch_replayed": true,
-    "fiat_p256_adx_dispatch_absent": true,
     "ssl_buffer_zeroing_present": true
   },
   "sync_history": [

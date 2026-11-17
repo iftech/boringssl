@@ -23,14 +23,6 @@ PR_BODY_PATH = Path(".vac/boringssl-sync-pr-body.md")
 # flag it sets in the provenance's `last_verification`. The list may be empty.
 LOCAL_PATCHES = [
     {
-        "name": "fiat-p256-windows",
-        "description": "Use portable C code for fiat_p256 mul/sqr on Windows by removing ADX assembly dispatch.",
-        "path": Path(".vac/patches/fiat-p256-windows.patch"),
-        "paths": [Path("third_party/fiat/p256_64.h")],
-        "verified_as": "fiat_p256_adx_dispatch_absent",
-        "checklist": "Confirm the local Windows `fiat_p256` patch is still required and correctly applied.",
-    },
-    {
         "name": "ssl-buffer-zeroing",
         "description": "With BORINGSSL_ZERO_RECORD_BUFFERS defined, allocate TLS record buffers with OPENSSL_malloc so that OPENSSL_free zeroes the decrypted records they hold; upstream's malloc/free otherwise.",
         "path": Path(".vac/patches/ssl-buffer-zeroing.patch"),
@@ -262,22 +254,6 @@ def refresh_patch_files(upstream_sha):
         git(["add", str(patch["path"])])
 
 
-def verify_fiat_p256_windows():
-    p256 = Path("third_party/fiat/p256_64.h").read_text(encoding="utf-8")
-    forbidden = [
-        "fiat_p256_adx_mul(",
-        "fiat_p256_adx_sqr(",
-        "fiat_p256_adx_mul(uint64_t",
-        "fiat_p256_adx_sqr(uint64_t",
-    ]
-    present = [token for token in forbidden if token in p256]
-    if present:
-        fail(
-            "third_party/fiat/p256_64.h appears to contain ADX dispatch again: "
-            + ", ".join(present)
-        )
-
-
 def verify_ssl_buffer_zeroing():
     # With BORINGSSL_ZERO_RECORD_BUFFERS the record buffer must be allocated and
     # released through the zeroing allocator; every call site goes through the
@@ -298,7 +274,6 @@ def verify_ssl_buffer_zeroing():
 
 
 INVARIANTS = {
-    "fiat-p256-windows": verify_fiat_p256_windows,
     "ssl-buffer-zeroing": verify_ssl_buffer_zeroing,
 }
 
